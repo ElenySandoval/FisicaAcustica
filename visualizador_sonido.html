@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Ver el Sonido — Contaminación Sonora</title>
+  <title>Contaminación Sonora</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html,
@@ -99,10 +99,10 @@
 
 <body>
   <div id="controls">
-    <div class="small">Visualizador interactivo — Contaminación sonora</div>
+    <div class="small">Visualizador interactivo</div>
     <div style="margin-top:8px;">
-      <button id="startBtn">🎤 Iniciar micrófono</button>
-      <button id="pauseBtn">⏸️ Pausar</button>
+      <button id="startBtn">Iniciar</button>
+      <button id="pauseBtn">Pausar</button>
     </div>
     <div style="margin-top:8px;">
       <label class="small">Ambiente</label><br />
@@ -110,7 +110,7 @@
         <option value="casa">Biblioteca (máx 40 dB)</option>
         <option value="oficina">Oficina (máx 65 dB)</option>
         <option value="calle">Calle (máx 80 dB)</option>
-        <option value="concierto">Concierto (máx 100 dB)</option>
+        <option value="concierto">Concierto (máx 120 dB)</option>
       </select>
     </div>
     <div style="margin-top:8px;">
@@ -123,7 +123,7 @@
     </div>
   </div>
 
-  <div id="alerta">⚠️ ¡Ruido excesivo detectado!</div>
+  <div class="alert" id="alert">⚠️ ¡Ruido excesivo detectado!</div>
 
   <script>
     let mic, fft;
@@ -138,7 +138,7 @@
       casa: 40,
       oficina: 65,
       calle: 80,
-      concierto: 100
+      concierto: 120
     };
 
     function setup() {
@@ -284,7 +284,7 @@
       fill(200);
       textSize(12);
       textAlign(LEFT, BOTTOM);
-      text('Visualizador: intensidad ↔ color | frecuencia ↔ barras', 20, height - 20);
+      text('Visualizador: intensidad - color | frecuencia - barras', 20, height - 20);
 
     }
     function windowResized() {
