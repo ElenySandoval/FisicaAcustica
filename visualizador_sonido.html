@@ -50,7 +50,6 @@
       color: #cdd6e3;
     }
 
-    /* 🔔 Alerta visual */
     #alerta {
       position: absolute;
       top: 30px;
@@ -192,7 +191,6 @@
         textAlign(CENTER, CENTER);
         textSize(20);
         text('Presiona "Iniciar micrófono" para comenzar', width / 2, height / 2);
-        // Asegúrate de que la alerta se oculte si está pausado o no iniciado
         select('#alerta').removeClass('show');
         alertActive = false;
         return;
@@ -212,45 +210,37 @@
       select('#rms').html(level.toFixed(3));
       select('#db').html((db === -Infinity) ? '-∞' : db.toFixed(1) + ' dB');
 
-      // --- 🔔 Lógica de Alerta de Ruido Modificada 🔔 ---
-      const TIME_BUFFER = 60; // Número de frames para mantener la alerta después de bajar
-      const alertaElement = select('#alerta'); // Obtener el elemento de la alerta una vez
+      const TIME_BUFFER = 60; 
+      const alertaElement = select('#alerta'); 
 
       // 1. Verificar si el nivel de ruido (db) supera el límite del ambiente (maxDB)
       if (db > maxDB) {
-        // Se superó el límite: activar la alerta y reiniciar el temporizador
+        // activar la alerta y reiniciar el temporizador
         alertActive = true;
-        alertTimer = TIME_BUFFER; // Le damos un buffer para que no parpadee
+        alertTimer = TIME_BUFFER;
       }
 
       // 2. Controlar la duración y visibilidad de la alerta
       if (alertActive) {
         alertTimer--;
 
-        // Mostrar la alerta HTML (añadir la clase 'show')
         alertaElement.addClass('show');
 
         if (alertTimer <= 0) {
-          // Se acabó el tiempo de buffer, desactivar
           alertActive = false;
         }
       }
 
-      // Si la alerta ya no está activa, ocultarla (remover la clase 'show')
       if (!alertActive) {
         alertaElement.removeClass('show');
       }
-      // ----------------------------------------------------
 
-      // Fondo base con alerta visual
       if (alertActive) {
-        let intensity = map(Math.sin(frameCount * 0.1), -1, 1, 60, 180); // Efecto de pulso en el fondo
-        background(200, 50, 50, intensity * 0.5); // rojo parpadeante
+        let intensity = map(Math.sin(frameCount * 0.1), -1, 1, 60, 180); 
+        background(200, 50, 50, intensity * 0.5); 
       }
 
-      // --- Visual central: círculos dinámicos (sin cambios) ---
-      // ... (El resto del código de visualización de p5.js se mantiene igual)
-
+      // --- Visual central: círculos dinámicos //  ---
       push();
       translate(width / 2, height / 2);
       let maxR = min(width, height) * 0.42;
