@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Ver el Sonido — Contaminación Sonora</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: #0b0f1a;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 12px 16px;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+    }
+
+    button,
+    select {
+      background: #1f2937;
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    select {
+      width: 150px;
+    }
+
+    input[type=range] {
+      width: 140px;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #cdd6e3;
+    }
+
+    /* 🔔 Alerta visual */
+    #alerta {
+      position: absolute;
+      top: 30px;
+      right: 30px;
+      background: rgba(162, 82, 255, 0.25);
+      border: 1px solid rgba(220, 150, 255, 0.4);
+      color: #fff;
+      padding: 14px 24px;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      display: none;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 15px rgba(180, 100, 255, 0.6);
+      transition: all 0.4s ease;
+      opacity: 0;
+      transform: translateY(-10px);
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+
+    #alerta.show {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 6px #b86cff;
+      }
+
+      50% {
+        box-shadow: 0 0 22px #cc88ff;
+      }
+
+      100% {
+        box-shadow: 0 0 6px #b86cff;
+      }
+    }
+  </style>
+
+  <!-- p5.js y p5.sound -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/addons/p5.sound.min.js"></script>
+</head>
+
+<body>
+  <div id="controls">
+    <div class="small">Visualizador interactivo — Contaminación sonora</div>
+    <div style="margin-top:8px;">
+      <button id="startBtn">🎤 Iniciar micrófono</button>
+      <button id="pauseBtn">⏸️ Pausar</button>
+    </div>
+    <div style="margin-top:8px;">
+      <label class="small">Ambiente</label><br />
+      <select id="ambiente">
+        <option value="casa">Biblioteca (máx 40 dB)</option>
+        <option value="oficina">Oficina (máx 65 dB)</option>
+        <option value="calle">Calle (máx 80 dB)</option>
+        <option value="concierto">Concierto (máx 100 dB)</option>
+      </select>
+    </div>
+    <div style="margin-top:8px;">
+      <label class="small">Sensibilidad</label><br />
+      <input id="sens" type="range" min="0.5" max="5" step="0.1" value="1.5" />
+    </div>
+    <div style="margin-top:8px;">
+      <div class="small">Nivel (RMS): <span id="rms">0.00</span></div>
+      <div class="small">Estimado (dB, relativo): <span id="db">-∞</span></div>
+    </div>
+  </div>
+
+  <div id="alerta">⚠️ ¡Ruido excesivo detectado!</div>
+
+  <script>
+    let mic, fft;
+    let running = false;
+    let paused = false;
+    let sensControl, ambienteSelect;
+    let maxDB = 55;
+    let alertTimer = 0;
+    let alertActive = false;
+
+    const ambientes = {
+      casa: 40,
+      oficina: 65,
+      calle: 80,
+      concierto: 100
+    };
+
+    function setup() {
+      let c = createCanvas(windowWidth, windowHeight);
+      c.position(0, 0);
+      c.style('z-index', '1');
+      noStroke();
+      background(11, 15, 26);
+      fft = new p5.FFT(0.8, 1024);
+
+      sensControl = select('#sens');
+      ambienteSelect = select('#ambiente');
+      ambienteSelect.changed(() => {
+        maxDB = ambientes[ambienteSelect.value()];
+        alerta.classList.remove('show');
+        alertaVisible = false;
+      });
+
+      select('#startBtn').mousePressed(startAudio);
+      select('#pauseBtn').mousePressed(togglePause);
+    }
+
+    function startAudio() {
+      if (!running) {
+        userStartAudio().then(() => {
+          mic = new p5.AudioIn();
+          mic.start();
+          fft.setInput(mic);
+          running = true;
+          paused = false;
+        }).catch(err => {
+          console.error('Mic error', err);
+          alert('No se pudo acceder al micrófono. Revisa permisos.');
+        });
+      } else if (paused) {
+        paused = false;
+      }
+    }
+
+    function togglePause() {
+      if (running) {
+        paused = !paused;
+      }
+    }
+    function draw() {
+      if (!running || !mic || paused) {
+        fill(255, 255, 255, 12);
+        rect(0, 0, width, height);
+        fill(200);
+        textAlign(CENTER, CENTER);
+        textSize(20);
+        text('Presiona "Iniciar micrófono" para comenzar', width / 2, height / 2);
+        // Asegúrate de que la alerta se oculte si está pausado o no iniciado
+        select('#alerta').removeClass('show');
+        alertActive = false;
+        return;
+      }
+
+      background(8, 10, 20, 110);
+
+      const spectrum = fft.analyze();
+      const waveform = fft.waveform();
+
+      let level = mic.getLevel();
+      let sens = float(sensControl.value());
+      let amplified = pow(level * sens, 0.9);
+
+      // Cálculo del nivel de dB
+      let db = (level > 0.0001) ? 20 * Math.log10(level) + 90 : -Infinity;
+      select('#rms').html(level.toFixed(3));
+      select('#db').html((db === -Infinity) ? '-∞' : db.toFixed(1) + ' dB');
+
+      // --- 🔔 Lógica de Alerta de Ruido Modificada 🔔 ---
+      const TIME_BUFFER = 60; // Número de frames para mantener la alerta después de bajar
+      const alertaElement = select('#alerta'); // Obtener el elemento de la alerta una vez
+
+      // 1. Verificar si el nivel de ruido (db) supera el límite del ambiente (maxDB)
+      if (db > maxDB) {
+        // Se superó el límite: activar la alerta y reiniciar el temporizador
+        alertActive = true;
+        alertTimer = TIME_BUFFER; // Le damos un buffer para que no parpadee
+      }
+
+      // 2. Controlar la duración y visibilidad de la alerta
+      if (alertActive) {
+        alertTimer--;
+
+        // Mostrar la alerta HTML (añadir la clase 'show')
+        alertaElement.addClass('show');
+
+        if (alertTimer <= 0) {
+          // Se acabó el tiempo de buffer, desactivar
+          alertActive = false;
+        }
+      }
+
+      // Si la alerta ya no está activa, ocultarla (remover la clase 'show')
+      if (!alertActive) {
+        alertaElement.removeClass('show');
+      }
+      // ----------------------------------------------------
+
+      // Fondo base con alerta visual
+      if (alertActive) {
+        let intensity = map(Math.sin(frameCount * 0.1), -1, 1, 60, 180); // Efecto de pulso en el fondo
+        background(200, 50, 50, intensity * 0.5); // rojo parpadeante
+      }
+
+      // --- Visual central: círculos dinámicos (sin cambios) ---
+      // ... (El resto del código de visualización de p5.js se mantiene igual)
+
+      push();
+      translate(width / 2, height / 2);
+      let maxR = min(width, height) * 0.42;
+      let rings = 7;
+      for (let r = rings; r >= 1; r--) {
+        let radius = (r / rings) * maxR;
+        let alpha = map(r, 1, rings, 40, 160);
+        let pulse = 1 + amplified * (r * 0.6);
+        noFill();
+        strokeWeight(2);
+        stroke(lerpColor(color(100, 60, 200), color(200, 100, 255), r / rings));
+        beginShape();
+        for (let a = 0; a <= TWO_PI + 0.1; a += TWO_PI / 240) {
+          let idx = Math.floor(map(a, 0, TWO_PI, 0, waveform.length - 1));
+          let wf = waveform[idx] || 0;
+          let noiseFactor = wf * 60;
+          let px = cos(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
+          let py = sin(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
+          curveVertex(px, py);
+        }
+        endShape(CLOSE);
+      }
+      pop();
+
+      // Barras del espectro
+      let barW = 3;
+      let bins = 64;
+      let startX = width - (bins * barW) - 40;
+      for (let i = 0; i < bins; i++) {
+        let spIdx = floor(map(i, 0, bins - 1, 0, spectrum.length - 1));
+        let amp = spectrum[spIdx] / 255.0;
+        let h = amp * (height * 0.35) + 6;
+        let x = startX + i * barW;
+        let y = height - 80;
+        let col = lerpColor(color(80, 40, 200), color(230, 100, 255), amp);
+        fill(col);
+        noStroke();
+        rect(x, y - h, barW - 1, h, 3);
+      }
+
+      fill(200);
+      textSize(12);
+      textAlign(LEFT, BOTTOM);
+      text('Visualizador: intensidad ↔ color | frecuencia ↔ barras', 20, height - 20);
+
+    }
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+    }
+  </script>
+</body>
+
+</html>
