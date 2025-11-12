@@ -68,6 +68,7 @@
       opacity: 0;
       transform: translateY(-10px);
       text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      z-index: 9999;
     }
 
     #alerta.show {
@@ -115,7 +116,7 @@
     </div>
     <div style="margin-top:8px;">
       <label class="small">Sensibilidad</label><br />
-      <input id="sens" type="range" min="0.5" max="5" step="0.1" value="1.5" />
+      <input id="sens" type="range" min="0.2" max="10" step="0.1" value="1.5" />
     </div>
     <div style="margin-top:8px;">
       <div class="small">Nivel (RMS): <span id="rms">0.00</span></div>
@@ -123,174 +124,203 @@
     </div>
   </div>
 
-  <div class="alert" id="alert">⚠️ ¡Ruido excesivo detectado!</div>
+  <div class="alerta" id="alerta">⚠️ ¡Ruido excesivo detectado!</div>
 
-  <script>
-    let mic, fft;
-    let running = false;
-    let paused = false;
-    let sensControl, ambienteSelect;
-    let maxDB = 55;
-    let alertTimer = 0;
-    let alertActive = false;
+<script>
+  let mic, fft;
+  let running = false;
+  let paused = false;
+  let sensControl, ambienteSelect;
+  let maxDB = 40;
+  let alertTimer = 0;
+  let alertActive = false;
+  let beepOsc; // sonido de alerta
 
-    const ambientes = {
-      casa: 40,
-      oficina: 65,
-      calle: 80,
-      concierto: 120
-    };
+  const ambientes = {
+    casa: 40,
+    oficina: 65,
+    calle: 80,
+    concierto: 120
+  };
 
-    function setup() {
-      let c = createCanvas(windowWidth, windowHeight);
-      c.position(0, 0);
-      c.style('z-index', '1');
-      noStroke();
-      background(11, 15, 26);
-      fft = new p5.FFT(0.8, 1024);
+  let alerta; // referencia global (definida al iniciar DOM)
 
-      sensControl = select('#sens');
-      ambienteSelect = select('#ambiente');
-      ambienteSelect.changed(() => {
-        maxDB = ambientes[ambienteSelect.value()];
-        alerta.classList.remove('show');
-        alertaVisible = false;
-      });
+  function setup() {
+    // Esperar a que el DOM esté listo antes de buscar el div de alerta
+    alerta = document.getElementById('alerta');
 
-      select('#startBtn').mousePressed(startAudio);
-      select('#pauseBtn').mousePressed(togglePause);
-    }
+    let c = createCanvas(windowWidth, windowHeight);
+    c.position(0, 0);
+    c.style('z-index', '1');
+    noStroke();
+    background(11, 15, 26);
 
-    function startAudio() {
-      if (!running) {
-        userStartAudio().then(() => {
+    fft = new p5.FFT(0.8, 1024);
+    sensControl = select('#sens');
+    ambienteSelect = select('#ambiente');
+
+    ambienteSelect.changed(() => {
+      maxDB = ambientes[ambienteSelect.value()];
+      hideAlert();
+    });
+
+    select('#startBtn').mousePressed(startAudio);
+    select('#pauseBtn').mousePressed(togglePause);
+
+    // Crear oscilador para beep
+    beepOsc = new p5.Oscillator('sine');
+    beepOsc.amp(0);
+    beepOsc.start();
+  }
+
+  function startAudio() {
+    if (!running) {
+      userStartAudio()
+        .then(() => {
           mic = new p5.AudioIn();
           mic.start();
           fft.setInput(mic);
           running = true;
           paused = false;
-        }).catch(err => {
+        })
+        .catch(err => {
           console.error('Mic error', err);
           alert('No se pudo acceder al micrófono. Revisa permisos.');
         });
-      } else if (paused) {
-        paused = false;
-      }
+    } else if (paused) {
+      paused = false;
     }
+  }
 
-    function togglePause() {
-      if (running) {
-        paused = !paused;
-      }
+  function togglePause() {
+    if (running) {
+      paused = !paused;
     }
-    function draw() {
-      if (!running || !mic || paused) {
-        fill(255, 255, 255, 12);
-        rect(0, 0, width, height);
-        fill(200);
-        textAlign(CENTER, CENTER);
-        textSize(20);
-        text('Presiona "Iniciar micrófono" para comenzar', width / 2, height / 2);
-        select('#alerta').removeClass('show');
-        alertActive = false;
-        return;
-      }
+  }
 
-      background(8, 10, 20, 110);
-
-      const spectrum = fft.analyze();
-      const waveform = fft.waveform();
-
-      let level = mic.getLevel();
-      let sens = float(sensControl.value());
-      let amplified = pow(level * sens, 0.9);
-
-      // Cálculo del nivel de dB
-      let db = (level > 0.0001) ? 20 * Math.log10(level) + 90 : -Infinity;
-      select('#rms').html(level.toFixed(3));
-      select('#db').html((db === -Infinity) ? '-∞' : db.toFixed(1) + ' dB');
-
-      const TIME_BUFFER = 60; 
-      const alertaElement = select('#alerta'); 
-
-      // 1. Verificar si el nivel de ruido (db) supera el límite del ambiente (maxDB)
-      if (db > maxDB) {
-        // activar la alerta y reiniciar el temporizador
-        alertActive = true;
-        alertTimer = TIME_BUFFER;
-      }
-
-      // 2. Controlar la duración y visibilidad de la alerta
-      if (alertActive) {
-        alertTimer--;
-
-        alertaElement.addClass('show');
-
-        if (alertTimer <= 0) {
-          alertActive = false;
-        }
-      }
-
-      if (!alertActive) {
-        alertaElement.removeClass('show');
-      }
-
-      if (alertActive) {
-        let intensity = map(Math.sin(frameCount * 0.1), -1, 1, 60, 180); 
-        background(200, 50, 50, intensity * 0.5); 
-      }
-
-      // --- Visual central: círculos dinámicos //  ---
-      push();
-      translate(width / 2, height / 2);
-      let maxR = min(width, height) * 0.42;
-      let rings = 7;
-      for (let r = rings; r >= 1; r--) {
-        let radius = (r / rings) * maxR;
-        let alpha = map(r, 1, rings, 40, 160);
-        let pulse = 1 + amplified * (r * 0.6);
-        noFill();
-        strokeWeight(2);
-        stroke(lerpColor(color(100, 60, 200), color(200, 100, 255), r / rings));
-        beginShape();
-        for (let a = 0; a <= TWO_PI + 0.1; a += TWO_PI / 240) {
-          let idx = Math.floor(map(a, 0, TWO_PI, 0, waveform.length - 1));
-          let wf = waveform[idx] || 0;
-          let noiseFactor = wf * 60;
-          let px = cos(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
-          let py = sin(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
-          curveVertex(px, py);
-        }
-        endShape(CLOSE);
-      }
-      pop();
-
-      // Barras del espectro
-      let barW = 3;
-      let bins = 64;
-      let startX = width - (bins * barW) - 40;
-      for (let i = 0; i < bins; i++) {
-        let spIdx = floor(map(i, 0, bins - 1, 0, spectrum.length - 1));
-        let amp = spectrum[spIdx] / 255.0;
-        let h = amp * (height * 0.35) + 6;
-        let x = startX + i * barW;
-        let y = height - 80;
-        let col = lerpColor(color(80, 40, 200), color(230, 100, 255), amp);
-        fill(col);
-        noStroke();
-        rect(x, y - h, barW - 1, h, 3);
-      }
-
+  function draw() {
+    if (!running || !mic || paused) {
+      fill(255, 255, 255, 12);
+      rect(0, 0, width, height);
       fill(200);
-      textSize(12);
-      textAlign(LEFT, BOTTOM);
-      text('Visualizador: intensidad - color | frecuencia - barras', 20, height - 20);
+      textAlign(CENTER, CENTER);
+      textSize(20);
+      text('Presiona "Iniciar" para comenzar', width / 2, height / 2);
+      hideAlert();
+      return;
+    }
 
+    background(8, 10, 20, 110);
+
+    const spectrum = fft.analyze();
+    const waveform = fft.waveform();
+
+    let level = mic.getLevel();
+    let sens = float(sensControl.value());
+    let amplified = pow(level * sens, 0.9);
+
+    // Calcular dB relativo
+    let db = (level > 0.0001) ? 20 * Math.log10(level * sens) + 90 : -Infinity;
+    select('#rms').html(level.toFixed(3));
+    select('#db').html((db === -Infinity) ? '-∞' : db.toFixed(1) + ' dB');
+
+    const TIME_BUFFER = 60;
+
+    // Detectar exceso de ruido
+    if (db > maxDB) {
+      alertActive = true;
+      alertTimer = TIME_BUFFER;
+
+      // reproducir beep si recién se activa
+      if (!alerta.classList.contains('show')) playBeep();
+      showAlert();
     }
-    function windowResized() {
-      resizeCanvas(windowWidth, windowHeight);
+
+    if (alertActive) {
+      alertTimer--;
+      if (alertTimer <= 0) {
+        alertActive = false;
+        hideAlert();
+      }
     }
-  </script>
+
+    // Fondo dinámico cuando hay ruido
+    if (alertActive) {
+      let intensity = map(Math.sin(frameCount * 0.1), -1, 1, 60, 180);
+      background(200, 50, 50, intensity * 0.5);
+    }
+
+    // --- Visual central ---
+    push();
+    translate(width / 2, height / 2);
+    let maxR = min(width, height) * 0.42;
+    let rings = 7;
+    for (let r = rings; r >= 1; r--) {
+      let radius = (r / rings) * maxR;
+      let pulse = 1 + amplified * (r * 0.6);
+      noFill();
+      strokeWeight(2);
+      stroke(lerpColor(color(100, 60, 200), color(200, 100, 255), r / rings));
+      beginShape();
+      for (let a = 0; a <= TWO_PI; a += TWO_PI / 240) {
+        let idx = Math.floor(map(a, 0, TWO_PI, 0, waveform.length - 1));
+        let wf = waveform[idx] || 0;
+        let noiseFactor = wf * 60;
+        let px = cos(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
+        let py = sin(a) * radius * (1 + noiseFactor * amplified * 0.6 * (r / rings));
+        curveVertex(px, py);
+      }
+      endShape(CLOSE);
+    }
+    pop();
+
+    // Barras del espectro
+    let barW = 3;
+    let bins = 64;
+    let startX = width - (bins * barW) - 40;
+    for (let i = 0; i < bins; i++) {
+      let spIdx = floor(map(i, 0, bins - 1, 0, spectrum.length - 1));
+      let amp = spectrum[spIdx] / 255.0;
+      let h = amp * (height * 0.35) + 6;
+      let x = startX + i * barW;
+      let y = height - 80;
+      let col = lerpColor(color(80, 40, 200), color(230, 100, 255), amp);
+      fill(col);
+      noStroke();
+      rect(x, y - h, barW - 1, h, 3);
+    }
+
+    fill(200);
+    textSize(12);
+    textAlign(LEFT, BOTTOM);
+    text('Visualizador: intensidad - color | frecuencia - barras', 20, height - 20);
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+  }
+
+  // ---------- Funciones auxiliares ----------
+  function showAlert() {
+    alerta.style.visibility = 'visible';
+    alerta.style.opacity = '1';
+    alerta.classList.add('show');
+  }
+
+  function hideAlert() {
+    alerta.style.opacity = '0';
+    alerta.style.visibility = 'hidden';
+    alerta.classList.remove('show');
+  }
+
+  // Pequeño beep cuando hay ruido alto
+  function playBeep() {
+    beepOsc.freq(880);
+    beepOsc.amp(0.3, 0.05);
+    setTimeout(() => beepOsc.amp(0, 0.2), 300);
+  }
+</script>
+
 </body>
 
 </html>
